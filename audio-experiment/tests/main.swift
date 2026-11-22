@@ -1,0 +1,37 @@
+import Foundation
+let h = try AudioWire.encode(.hello)
+precondition(Array(h) == [0x47,0x43,0x42,0x31,0,1,0,0])
+let p = try AudioWire.encode(.silence, Data(repeating:0,count:640))
+let r = try AudioWire.decode(p)
+precondition(r.0 == .silence && r.1.count == 640 && r.1.allSatisfy{$0 == 0})
+var bad=h; bad[0]=0; precondition((try? AudioWire.decode(bad)) == nil)
+print("AudioWire synthetic framing checks passed")
+
+let q=BoundedFrameQueue<Int>(capacity:5)
+for i in 0..<5 { precondition(q.push(i)) }
+precondition(!q.push(6) && q.count==5)
+precondition(q.pop()==0 && q.count==4); q.reset(); precondition(q.count==0)
+var g=PCMExperimentGate(); let now=Date(timeIntervalSince1970:100)
+precondition(!g.begin(.uplink,ready:false,now:now))
+precondition(g.begin(.uplink,ready:true,now:now) && !g.micOpened)
+g.acknowledgeStarted(); precondition(g.androidStarted && !g.micOpened); g.markMicOpened(); precondition(!g.micOpened); g.authorizeMicrophone(true); g.markMicOpened(); precondition(g.micOpened)
+precondition(g.shouldStop(now:now.addingTimeInterval(61))); g.stop(); precondition(!g.micOpened && g.mode == nil)
+precondition(g.begin(.downlink,ready:true,now:now)); precondition(g.shouldStop(now:now,androidCallActive:false)); precondition(g.shouldStop(now:now,socketConnected:false)); precondition(g.shouldStop(now:now.addingTimeInterval(61)))
+print("PASS bounded queue, start gates, lazy mic-open gate, timeout and disconnect/call-end stops")
+
+g.stop(); precondition(g.begin(.downlink,ready:true,now:now)); precondition(g.shouldStop(now:now,socketConnected:false))
+
+// Duplex requires the same two independent authorizations as uplink and never double-starts.
+g.stop(); precondition(!g.begin(.duplex,ready:false,now:now))
+precondition(g.begin(.duplex,ready:true,now:now))
+g.authorizeMicrophone(true); g.markMicOpened(); precondition(!g.canOpenMicrophone && !g.micOpened)
+precondition(!g.begin(.downlink,ready:true,now:now))
+g.acknowledgeStarted(); g.markMicOpened(); precondition(g.canOpenMicrophone && g.micOpened)
+precondition(g.shouldStop(now:now,androidCallActive:false))
+g.stop(); precondition(!g.canOpenMicrophone && !g.microphoneAllowed && !g.micOpened)
+precondition(g.begin(.downlink,ready:true,now:now)); g.authorizeMicrophone(true); g.acknowledgeStarted(); g.markMicOpened(); precondition(!g.canOpenMicrophone && !g.micOpened)
+let duplex=try AudioWire.decode(AudioWire.encode(.startDuplex)); precondition(duplex.0 == .startDuplex && duplex.1.isEmpty)
+let voice=Data([0xff,0x7f,0x11,0x22]); let muted=MicrophoneTransmission.payload(voice,muted:true)
+precondition(muted.count==voice.count && muted.allSatisfy{$0==0})
+precondition(MicrophoneTransmission.payload(voice,muted:false)==voice)
+print("PASS duplex authorization, duplicate-start rejection, cleanup, opcode and mute pacing")

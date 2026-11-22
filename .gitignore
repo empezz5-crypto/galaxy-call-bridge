@@ -1,0 +1,15 @@
+.DS_Store
+**/build/
+checkpoints/
+*.log
+*.keystore
+.env
+.env.*
+!.env.example
+
+.serena/
+__pycache__/
+*.apk
+*.jsonl
+trusted-device.json
+call-history.json
